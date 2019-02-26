@@ -1,132 +1,115 @@
 #!/bin/bash
 
-. ./path.sh
+stage=0
+train_discriminative=false  # by default, don't do the GMM-based discriminative
+                            # training.
+
 . ./cmd.sh
-
-nj=4         # number of parallel jobs
-nj_decode=4 # number of parallel jobs used for decoding
-lm_order=4   # language model order (n-gram quantity)
-stage=-100
-stage=4
-train=data/train
-test=data/test
-lang=data/lang
-
-# Safety mechanism (possible running this script with modified arguments)
+. ./path.sh
 . utils/parse_options.sh
-[[ $# -ge 1 ]] && { echo "Wrong arguments!"; exit 1; }
 
 
-if [ $stage -le 1 ]; then
+# This setups was modified from egs/sebd/s5c
+# and adapted to the malromur corpus http://www.malfong.is/?pg=malromur
 
-	echo
-	echo "===== MONO TRAINING ====="
-	echo
-
-	steps/train_mono.sh --nj $nj --cmd "$train_cmd" --totgauss 4000 "$train" "$lang" exp/mono 
-fi
-
-if [ $stage -le 2 ]; then
-
-	echo
-	echo "===== TRI1 (first triphone pass) TRAINING ====="
-	echo
-
-	steps/align_si.sh --nj $nj --cmd "$train_cmd" "$train" "$lang" exp/mono exp/mono_ali
-
-	steps/train_deltas.sh --cmd "$train_cmd" 3200 30000 "$train" "$lang" exp/mono_ali exp/tri1
-fi
-
-
-if [ $stage -le 3 ]; then
-	echo
-	echo "==== TRI2 (delta + delta - delta) ===="
-	echo 
-	
-	steps/align_si.sh --nj $nj --cmd "$train_cmd" "$train" "$lang" exp/tri1 exp/tri1_ali;
-	
-	steps/train_deltas.sh --cmd "$train_cmd" 4000 70000 "$train" "$lang" exp/tri1_ali exp/tri2a;
-fi
-
-if [ $stage -le 4 ]; then
-	echo
-	echo "==== TRI2 (LDA + MLLT) ===="
-	echo 
-	
-	steps/align_si.sh --nj $nj --cmd "$train_cmd" "$train" "$lang" exp/tri2a exp/tri2a_ali;
-	
-	#Options: --splice-opts "--left-context=5 --right-context=5"
-	steps/train_lda_mllt.sh --cmd "$train_cmd" 6000 140000 "$train" "$lang" exp/tri2_ali exp/tri2b;
-fi
-
-if [ $stage -le 5 ]; then
-	echo
-	echo "==== TRI3 (LDA + MLLT + SAT) ===="
-	echo 
-
-	steps/align_fmllr.sh  --nj $nj --cmd "$train_cmd" "$train" "$lang" exp/tri2b exp/tri2b_ali;
-	
-	steps/train_sat.sh --cmd "$train_cmd" 11500 200000 "$train" "$lang" exp/tri2b_ali exp/tri3;
-
-	utils/mkgraph.sh data/lang exp/tri3 exp/tri3/graph;
-
-	steps/decode_fmllr.sh --cmd "$decode_cmd" --nj $nj_decode exp/tri3/graph \
-						  "$test" exp/tri3/decode;	
-
-fi
-
-if [ $stage -le 6 ]; then
-  # MMI training starting from the LDA+MLLT+SAT systems
-  steps/align_fmllr.sh --nj $nj --cmd "$train_cmd" "$train" "$lang" exp/tri3 exp/tri3_ali;
-
-  steps/make_denlats.sh --nj $nj --cmd "$decode_cmd" \
-                        --config conf/decode.config --transform-dir exp/tri3_ali \
-                        "$train" "$lang" exp/tri3 exp/tri3_denlats;
-
-fi
+set -e # exit on error
 
 if [ $stage -le 7 ]; then
-	echo "Train MMI"
-  # 4 iterations of MMI seems to work well overall. The number of iterations is
-  # used as an explicit argument even though train_mmi.sh will use 4 iterations by
-  # default.
-  num_mmi_iters=4
-  steps/train_mmi.sh --cmd "$decode_cmd" \
-                     --boost 0.1 --num-iters $num_mmi_iters \
-                     "$train" "$lang" exp/tri3_{ali,denlats} exp/tri3_mmi;
-
-  for iter in 1 2 3 4; do
-    
-      graph_dir=exp/tri3/graph
-      decode_dir=exp/tri3_mmi/decode_${iter}.mdl
-      steps/decode.sh --nj $nj --cmd "$decode_cmd" \
-                      --config conf/decode.config --iter $iter \
-                      --transform-dir exp/tri3/decode_mmi \
-                      $graph_dir data/test $decode_dir;
+  # Now make MFCC features.
+  # mfccdir should be some place with a largish disk where you
+  # want to store MFCC features.
+  mfccdir=mfcc
+  for x in train eval2000 test; do
+    steps/make_mfcc.sh --nj 50 --cmd "$train_cmd" \
+                       data/$x exp/make_mfcc/$x $mfccdir
+    steps/compute_cmvn_stats.sh data/$x exp/make_mfcc/$x $mfccdir
+    utils/fix_data_dir.sh data/$x
   done
 fi
-
 
 if [ $stage -le 8 ]; then
-  # Now do fMMI+MMI training
-  steps/train_diag_ubm.sh --silence-weight 0.5 --nj $nj --cmd "$train_cmd" \
-                          700 "$train" "$lang" exp/tri3_ali exp/tri3_dubm;
+  # Now-- there are 260k utterances (313hr 23min), and we want to start the
+  # monophone training on relatively short utterances (easier to align), but not
+  # only the shortest ones (mostly uh-huh).  So take the 100k shortest ones, and
+  # then take 30k random utterances from those (about 12hr)
+  utils/subset_data_dir.sh --shortest data/train 100000 data/train_100kshort
+  utils/subset_data_dir.sh data/train_100kshort 30000 data/train_30kshort
 
-  steps/train_mmi_fmmi.sh --learning-rate 0.005 \
-                          --boost 0.1 --cmd "$train_cmd" \
-                          "$train" "$lang" exp/tri3_ali exp/tri3_dubm \
-                          exp/tri3_denlats exp/tri3_fmmi;
-
-  for iter in 4 5 6 7 8; do
-    
-      graph_dir=exp/tri3/graph
-      decode_dir=exp/tri3_fmmi/decode_it${iter}
-      steps/decode_fmmi.sh --nj $nj_decode --cmd "$decode_cmd" --iter $iter \
-                           --transform-dir exp/tri3/decode \
-                           --config conf/decode.config $graph_dir data/train $decode_dir;
-  done
+  # Take the first 100k utterances (just under half the data); we'll use
+  # this for later stages of training.
+  utils/subset_data_dir.sh --first data/train 100000 data/train_100k_dups
+  utils/data/remove_dup_utts.sh 200 data/train_100k_dups data/train_100k  # 110hr
 fi
 
-echo
-echo "===== run.sh script is finished ====="
-echo
+if [ $stage -le 9 ]; then
+  ## Starting basic training on MFCC features
+  steps/train_mono.sh --nj 30 --cmd "$train_cmd" \
+                      data/train_30kshort data/lang exp/mono
+fi
+
+if [ $stage -le 10 ]; then
+  steps/align_si.sh --nj 30 --cmd "$train_cmd" \
+                    data/train_100k_nodup data/lang exp/mono exp/mono_ali
+
+  steps/train_deltas.sh --cmd "$train_cmd" \
+                        3200 30000 data/train_100k data/lang exp/mono_ali exp/tri1
+
+  graph_dir=exp/tri1/graph
+  $train_cmd $graph_dir/mkgraph.log \
+             utils/mkgraph.sh data/lang exp/tri1 $graph_dir
+  steps/decode_si.sh --nj 30 --cmd "$decode_cmd" --config conf/decode.config \
+                     $graph_dir data/eval2000 exp/tri1/decode_eval2000
+fi
+
+
+if [ $stage -le 11 ]; then
+  steps/align_si.sh --nj 30 --cmd "$train_cmd" \
+                    data/train_100k_nodup data/lang exp/tri1 exp/tri1_ali
+
+  steps/train_deltas.sh --cmd "$train_cmd" \
+                        4000 70000 data/train_100k data/lang exp/tri1_ali exp/tri2
+
+  graph_dir=exp/tri2/graph
+  $train_cmd $graph_dir/mkgraph.log \
+             utils/mkgraph.sh data/lang_nosp_sw1_tg exp/tri2 $graph_dir
+  steps/decode.sh --nj 30 --cmd "$decode_cmd" --config conf/decode.config \
+                    $graph_dir data/eval2000 exp/tri2/decode_eval2000
+fi
+
+if [ $stage -le 12 ]; then
+  # From now, we start using all of the data (except some duplicates of common
+  # utterances, which don't really contribute much).
+  steps/align_si.sh --nj 30 --cmd "$train_cmd" \
+                    data/train data/lang exp/tri2 exp/tri2_ali
+
+  # Do another iteration of LDA+MLLT training, on all the data.
+  steps/train_lda_mllt.sh --cmd "$train_cmd" \
+                          6000 140000 data/train data/lang exp/tri2_ali exp/tri3
+
+  graph_dir=exp/tri3/graph
+  $train_cmd $graph_dir/mkgraph.log \
+             utils/mkgraph.sh data/lang exp/tri3 $graph_dir
+  steps/decode.sh --nj 30 --cmd "$decode_cmd" --config conf/decode.config \
+                  $graph_dir data/eval2000 exp/tri3/decode_eval2000
+fi
+
+
+if [ $stage -le 14 ]; then
+  # Train tri4, which is LDA+MLLT+SAT, on all the data.
+  steps/align_fmllr.sh --nj 30 --cmd "$train_cmd" \
+                       data/train data/lang exp/tri3 exp/tri3_ali
+
+
+  steps/train_sat.sh  --cmd "$train_cmd" \
+                      11500 200000 data/train_nodup data/lang exp/tri3_ali exp/tri4
+
+  graph_dir=exp/tri4/graph
+  $train_cmd $graph_dir/mkgraph.log \
+             utils/mkgraph.sh data/lang exp/tri4 $graph_dir
+  steps/decode_fmllr.sh --nj 30 --cmd "$decode_cmd" \
+                        --config conf/decode.config \
+                        $graph_dir data/eval2000 exp/tri4/decode_eval2000
+  # Will be used for confidence calibration example,
+  steps/decode_fmllr.sh --nj 30 --cmd "$decode_cmd" \
+                        $graph_dir data/train_dev exp/tri4/decode_dev
+fi
