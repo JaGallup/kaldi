@@ -50,10 +50,7 @@ if [ $stage -le 3 ]; then
     utils/create_split_dir.pl /export/b0{1,2,3,4}/$USER/kaldi-data/mfcc/swbd-$date/s5b/$mfccdir/storage $mfccdir/storage
   fi
 
-  # the 100k directory is copied seperately, as
-  # we want to use exp/tri2_ali_100k_nodup for lda_mllt training
-  # the main train directory might be speed_perturbed
-  for dataset in $train_set train_100k; do
+  for dataset in $train_set; do
     utils/copy_data_dir.sh data/$dataset data/${dataset}_hires
 
     utils/data/perturb_data_dir_volume.sh data/${dataset}_hires
@@ -90,8 +87,8 @@ if [ $stage -le 5 ]; then
   # this decision is based on fisher_english
   steps/train_lda_mllt.sh --cmd "$train_cmd" --num-iters 13 \
     --splice-opts "--left-context=3 --right-context=3" \
-    5500 90000 data/train_100k_hires \
-    data/lang exp/tri2_ali_100k exp/nnet3/tri3b
+    5500 90000 data/train_hires \
+    data/lang exp/tri2_ali exp/nnet3/tri3b
 fi
 
 if [ $stage -le 6 ]; then
@@ -105,7 +102,7 @@ if [ $stage -le 7 ]; then
   # fairly small dim (defaults to 100) so we don't use all of it, we use just the
   # 100k subset (just under half the data).
   steps/online/nnet2/train_ivector_extractor.sh --cmd "$train_cmd" --nj 10 \
-    data/train_100k_hires exp/nnet3/diag_ubm exp/nnet3/extractor || exit 1;
+    data/train_hires exp/nnet3/diag_ubm exp/nnet3/extractor || exit 1;
 fi
 
 if [ $stage -le 8 ]; then

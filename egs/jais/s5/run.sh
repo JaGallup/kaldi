@@ -32,13 +32,8 @@ if [ $stage -le 8 ]; then
   # monophone training on relatively short utterances (easier to align), but not
   # only the shortest ones (mostly uh-huh).  So take the 100k shortest ones, and
   # then take 30k random utterances from those (about 12hr)
-  utils/subset_data_dir.sh --shortest data/train 100000 data/train_100kshort
-  utils/subset_data_dir.sh data/train_100kshort 30000 data/train_30kshort
-
-  # Take the first 100k utterances (just under half the data); we'll use
-  # this for later stages of training.
-  utils/subset_data_dir.sh --first data/train 100000 data/train_100k_dups
-  utils/data/remove_dup_utts.sh 200 data/train_100k_dups data/train_100k  # 110hr
+  utils/subset_data_dir.sh --shortest data/train 60000 data/train_60kshort
+  utils/subset_data_dir.sh data/train_600kshort 30000 data/train_30kshort
 fi
 
 if [ $stage -le 9 ]; then
@@ -49,10 +44,10 @@ fi
 
 if [ $stage -le 10 ]; then
   steps/align_si.sh --nj 30 --cmd "$train_cmd" \
-                    data/train_100k_nodup data/lang exp/mono exp/mono_ali
+                    data/train data/lang exp/mono exp/mono_ali
 
   steps/train_deltas.sh --cmd "$train_cmd" \
-                        3200 30000 data/train_100k data/lang exp/mono_ali exp/tri1
+                        3200 30000 data/train data/lang exp/mono_ali exp/tri1
 
   graph_dir=exp/tri1/graph
   $train_cmd $graph_dir/mkgraph.log \
@@ -64,10 +59,10 @@ fi
 
 if [ $stage -le 11 ]; then
   steps/align_si.sh --nj 30 --cmd "$train_cmd" \
-                    data/train_100k_nodup data/lang exp/tri1 exp/tri1_ali
+                    data/train data/lang exp/tri1 exp/tri1_ali
 
   steps/train_deltas.sh --cmd "$train_cmd" \
-                        4000 70000 data/train_100k data/lang exp/tri1_ali exp/tri2
+                        4000 70000 data/train data/lang exp/tri1_ali exp/tri2
 
   graph_dir=exp/tri2/graph
   $train_cmd $graph_dir/mkgraph.log \
