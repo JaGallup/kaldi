@@ -8,7 +8,7 @@ export PATH=$PWD/utils/:$KALDI_ROOT/src/bin:$KALDI_ROOT/tools/openfst/bin:$KALDI
 export DATA_ROOT="/home/thorsteinn/thesis/data/malromur/correct"
 
 # Enable SRILM
-. $KALDI_ROOT/tools/env.sh
+#. $KALDI_ROOT/tools/env.sh
 
 # Variable needed for proper data sorting
 export LC_ALL=C
