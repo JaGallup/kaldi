@@ -7,7 +7,7 @@
 # 
 # The format of the info file (e.g. wav_info.txt) this script expects (tab-separated columns):
 #
-# <wav-filename>	<recording-info>	<recording-info>	<gender>	<age>	<prompt (spoken text)>	<utterance-length>	vorbis	16000	1	Vorbis
+# <wav-filename>    <recording-info>    <recording-info>    <gender>    <age>   <prompt (spoken text)>  <utterance-length>  vorbis  16000   1   Vorbis
 #
 # Note that the script converts all prompts to lowercase, change 'fields[5].lower()' if case should be kept.
 #
@@ -39,13 +39,12 @@ wavscp = open('$datadir/wav.scp', 'w')
 utt2spk = open('$datadir/utt2spk', 'w')
 spk2utt = open('$datadir/spk2utt', 'w')
 spk2gender = open('$datadir/spk2gender', 'w')
-
 for line in sys.stdin:
     fields = [x.strip() for x in line.split('\t')]
     utt_id = fields[0][:-4]
     spkr = '-'.join(fields[0].split('-')[0:2])
     gender = fields[3][0] if fields[3][0] != 'u' else 'm'
-    print >> text, utt_id, fields[5].lower()
+    print >> text, utt_id, fields[5].lower().replace('.', ' punktur ')
     print >> wavscp, '{} $wav_cmd < {}/{} | '.format(utt_id, '$malromur', fields[0])
     print >> utt2spk, utt_id, spkr
     print >> spk2gender, spkr, gender
