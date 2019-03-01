@@ -33,7 +33,7 @@ if [ $stage -le 8 ]; then
   # only the shortest ones (mostly uh-huh).  So take the 100k shortest ones, and
   # then take 30k random utterances from those (about 12hr)
   utils/subset_data_dir.sh --shortest data/train 60000 data/train_60kshort
-  utils/subset_data_dir.sh data/train_600kshort 30000 data/train_30kshort
+  utils/subset_data_dir.sh data/train_60kshort 30000 data/train_30kshort
 fi
 
 if [ $stage -le 9 ]; then
@@ -66,7 +66,7 @@ if [ $stage -le 11 ]; then
 
   graph_dir=exp/tri2/graph
   $train_cmd $graph_dir/mkgraph.log \
-             utils/mkgraph.sh data/lang_nosp_sw1_tg exp/tri2 $graph_dir
+             utils/mkgraph.sh data/lang exp/tri2 $graph_dir
   steps/decode.sh --nj 30 --cmd "$decode_cmd" --config conf/decode.config \
                     $graph_dir data/eval2000 exp/tri2/decode_eval2000
 fi
