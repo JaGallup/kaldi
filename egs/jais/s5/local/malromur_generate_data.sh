@@ -20,12 +20,6 @@ gawk -F ',' -v folder="$folder" 'BEGIN { OFS = "\t" } $8 == folder {print $1".wa
 utils/utt2spk_to_spk2utt.pl < $datadir/utt2spk > $datadir/spk2utt
 utils/validate_data_dir.sh --no-feats $datadir || utils/fix_data_dir.sh $datadir
 
-# The malromur corpus is ordered by speakers so to get a split with minimal
-# speaker overlap (maximum one speaker in both sets)
-# we can just split without shuffling the data
-utils/subset_data_dir.sh --first $datadir 90000 data/train
-n=$[`cat $datadir/wav.scp | wc -l` - 90000]
-utils/subset_data_dir.sh --last $datadir $n data/test
+# Split data into train and test sets (and a small evaluation set for quick decoding)
+utils/subset_data_dir_tr_cv.sh -cv-utt-percent 10 data/{all,train,test}
 utils/subset_data_dir.sh data/test 2000 data/eval2000
-
-

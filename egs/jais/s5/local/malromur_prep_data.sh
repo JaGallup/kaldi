@@ -2,6 +2,7 @@
 #
 # Copyright 2017 Reykjavik University
 # Author: Robert Kjaran, Anna B. Nikulasdottir
+# https://github.com/cadia-lvl/ice-asr
 # 
 # Prepares speech data in the format of the Málrómur speech corpus for ASR training in Kaldi
 # 
