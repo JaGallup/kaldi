@@ -23,6 +23,8 @@ mkdir -p $dir/local/dict
 cp $corpus $dir/local/corpus.txt
 if [ -d data/train ]; then
 	# Cut utternace id from training data and add to corpus
+	# It is recomended that the training data is included in the language model and lexicon
+	# so in some cases this is already part of the corpus
 	cat data/train/text | cut -f 1 -d ' ' --complement >> $dir/local/corpus.txt
 fi
 
